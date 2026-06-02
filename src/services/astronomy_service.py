@@ -20,12 +20,19 @@ load_dotenv()
 PROJECT_ROOT_PATH = os.getenv("PROJECT_ROOT_PATH")
 
 sys.path.insert(1, f"{PROJECT_ROOT_PATH}src/services/")
-from weather_service import geocode_location, get_moon_data
+from weather_service import geocode_location
 
 ASTRONOMY_API_ID = os.getenv("ASTRONOMY_API_ID")
 ASTRONOMY_API_SECRET = os.getenv("ASTRONOMY_API_SECRET")
 ASTRONOMY_API_URL = "https://api.astronomyapi.com/api/"
 
+if not ASTRONOMY_API_ID or not ASTRONOMY_API_SECRET:
+    raise EnvironmentError("Configuration Error: ASTRONOMY_API_KEY is missing!")
+
+IPGEO_API_KEY = os.getenv("IPGEO_API_KEY")
+
+if not IPGEO_API_KEY:
+    raise EnvironmentError("Configuration Error: IPGEO_API_KEY is missing!")
 
 # ==========================================================
 # Planet Visibility
@@ -65,6 +72,12 @@ def get_visible_planets(
 
     try:
 
+        formatted_time = (
+            f"{time}:00"
+            if len(time) == 5
+            else time
+        )
+
         url = (
             f"{ASTRONOMY_API_URL}v2/bodies/positions"
         )
@@ -75,9 +88,10 @@ def get_visible_planets(
             params={
                 "latitude": latitude,
                 "longitude": longitude,
+                "elevation": 0, 
                 "from_date": date,
                 "to_date": date,
-                "time": time
+                "time": formatted_time
             },
             timeout=15
         )
@@ -105,20 +119,27 @@ def get_visible_planets(
                 continue
 
             cell = cells[0]
+            try:
+                altitude = float(
+                    cell.get("position", {})
+                        .get("horizontal", {})
+                        .get("altitude", {})
+                        .get("degrees")
+                )
 
-            altitude = (
-                cell.get("position", {})
-                    .get("horizontal", {})
-                    .get("altitude", {})
-                    .get("degrees")
-            )
+                azimuth = float(
+                    cell.get("position", {})
+                        .get("horizontal", {})
+                        .get("azimuth", {})
+                        .get("degrees")
+                )
 
-            azimuth = (
-                cell.get("position", {})
-                    .get("horizontal", {})
-                    .get("azimuth", {})
-                    .get("degrees")
-            )
+            except (
+                KeyError,
+                TypeError,
+                ValueError
+            ):
+                continue
 
             if altitude is not None and altitude > 0:
 
@@ -142,6 +163,56 @@ def get_visible_planets(
         print(f"Planet API error: {exc}")
 
     return visible_planets
+
+
+# ==========================================================
+# Moon Data
+# ==========================================================
+def get_moon_data(
+    latitude: float,
+    longitude: float,
+    date: str
+) -> dict:
+    """
+    Retrieve moon phase and moon rise/set data.
+    """
+
+    try:
+
+        response = requests.get(
+            "https://api.ipgeolocation.io/astronomy",
+            params={
+                "apiKey": IPGEO_API_KEY,
+                "lat": latitude,
+                "long": longitude,
+                "date": date
+            },
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        return {
+            "phase": data.get("moon_phase"),
+            "illumination": data.get(
+                "moon_illumination_percentage"
+            ),
+            "moonrise": data.get("moonrise"),
+            "moonset": data.get("moonset")
+        }
+
+    except Exception as exc:
+
+        print(f"Moon API error: {exc}")
+
+        return {
+            "phase": "Unknown",
+            "illumination": None,
+            "moonrise": None,
+            "moonset": None
+        }
 
 
 # ==========================================================
@@ -296,3 +367,5 @@ def get_astronomy_data(
             "moon": {},
             "recommended_targets": []
         }
+    
+    

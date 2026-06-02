@@ -14,11 +14,13 @@ from chromadb.config import Settings
 # Configuration
 # ============================================================
 
-CHROMA_DB_PATH = "./chroma_db"
+import os
+from dotenv import load_dotenv
 
-CHAT_COLLECTION_NAME = "chat_messages"
-SESSION_COLLECTION_NAME = "session_data"
-
+load_dotenv()
+CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH")
+CHAT_COLLECTION_NAME = os.getenv("CHAT_COLLECTION_NAME")
+SESSION_COLLECTION_NAME = os.getenv("SESSION_COLLECTION_NAME")
 
 # ============================================================
 # ChromaDB Client
