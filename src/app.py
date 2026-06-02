@@ -4,6 +4,7 @@ Main application loop and GUI.
 UI created with Streamlit, and code generated with ChatGPT.
 """
 
+import json
 import uuid
 from datetime import date, time
 
@@ -19,7 +20,10 @@ from services.weather_service import (
 from services.memory_service import (
     test_memory_connection,
     save_session_data,
-    get_chat_history
+    load_session_data,
+    get_chat_history,
+    initialize_session_collection,
+    delete_session
 )
 
 # ============================================================
@@ -45,6 +49,11 @@ if "current_chat_id" not in st.session_state:
 if "show_new_session_form" not in st.session_state:
     st.session_state.show_new_session_form = True
 
+# Tracks whether we have already pulled history from ChromaDB
+# in this process — only needs to happen once per app start
+if "sessions_loaded" not in st.session_state:
+    st.session_state.sessions_loaded = False
+
 # Cache the last validated location so geocoding only fires
 # when the location field value actually changes
 if "location_validation" not in st.session_state:
@@ -53,6 +62,98 @@ if "location_validation" not in st.session_state:
         "is_valid":   None,   # True / False / None (not yet checked)
         "error":      None    # human-readable error message
     }
+
+
+# ============================================================
+# STARTUP: load persisted sessions from ChromaDB
+# ============================================================
+
+def create_chat_title(session_data):
+    """
+    Create a ChatGPT-style sidebar title from session data.
+    """
+
+    session_date = session_data["date"]
+    date_string  = str(session_date)
+
+    goals = session_data.get("goal", [])
+    topic = ", ".join(goals) if goals else "General Stargazing"
+
+    return f"🌙 {date_string} | {session_data['location']} | {topic}"
+
+
+def load_sessions_from_db() -> None:
+    """
+    Hydrate st.session_state.chat_sessions from ChromaDB on
+    first load. Each saved session becomes a sidebar entry;
+    its chat messages are loaded so the conversation is
+    immediately viewable when the user selects it.
+    """
+
+    try:
+        collection = initialize_session_collection()
+
+        # Fetch every saved session (no filter = all rows)
+        results = collection.get(
+            include=["documents", "metadatas"]
+        )
+
+        ids       = results.get("ids", [])
+        documents = results.get("documents", [])
+        metadatas = results.get("metadatas", [])
+
+        for session_id, document, metadata in zip(
+            ids, documents, metadatas
+        ):
+            # Skip sessions already in memory
+            # (e.g. created earlier in the same process)
+            if session_id in st.session_state.chat_sessions:
+                continue
+
+            try:
+                session_data = json.loads(document)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            # Rebuild chat messages from ChromaDB
+            raw_messages = get_chat_history(
+                session_id=session_id,
+                limit=200
+            )
+
+            # get_chat_history returns {"role", "message", "timestamp"}
+            # — remap to the {"role", "content"} shape the UI expects
+            messages = [
+                {
+                    "role":    msg["role"],
+                    "content": msg["message"]
+                }
+                for msg in raw_messages
+            ]
+
+            title = create_chat_title(session_data)
+
+            st.session_state.chat_sessions[session_id] = {
+                "id":           session_id,
+                "title":        title,
+                "session_data": session_data,
+                "messages":     messages,
+                "saved_at":     metadata.get("saved_at", "")
+            }
+
+    except Exception:
+        # Never crash the app over a history load failure
+        pass
+
+
+if not st.session_state.sessions_loaded:
+    load_sessions_from_db()
+    st.session_state.sessions_loaded = True
+
+    # If sessions were found, start on the form rather than
+    # forcing the user straight into one of the old chats
+    if st.session_state.chat_sessions:
+        st.session_state.show_new_session_form = True
 
 
 # ============================================================
@@ -100,21 +201,10 @@ def validate_location(location: str) -> tuple[bool, str | None]:
 
     return result
 
-def create_chat_title(session_data):
-    """
-    Create a ChatGPT-style sidebar title from session data.
-    """
-
-    session_date = session_data["date"]
-    date_string = str(session_date)
-
-    goals = session_data.get("goal", [])
-    topic = ", ".join(goals) if goals else "General Stargazing"
-
-    return f"🌙 {date_string} | {session_data['location']} | {topic}"
-
-
 def get_current_chat():
+    """
+    Get information about current chat session.
+    """
     chat_id = st.session_state.current_chat_id
 
     if not chat_id:
@@ -129,9 +219,12 @@ def create_new_chat(session_data):
     by calling process_user_request with a fixed opening prompt.
     """
 
+    from datetime import datetime, timezone
+
     chat_id = str(uuid.uuid4())
 
-    title = create_chat_title(session_data)
+    title    = create_chat_title(session_data)
+    saved_at = datetime.now(timezone.utc).isoformat()
 
     # Persist the session settings to ChromaDB before the first call
     save_session_data(chat_id, session_data)
@@ -139,10 +232,11 @@ def create_new_chat(session_data):
     # Register the chat with an empty message list first so the
     # session exists when process_user_request calls get_chat_history
     st.session_state.chat_sessions[chat_id] = {
-        "id": chat_id,
-        "title": title,
+        "id":           chat_id,
+        "title":        title,
         "session_data": session_data,
-        "messages": []
+        "messages":     [],
+        "saved_at":     saved_at
     }
 
     st.session_state.current_chat_id = chat_id
@@ -190,15 +284,45 @@ with st.sidebar:
     if not st.session_state.chat_sessions:
         st.caption("No sessions yet.")
 
-    for chat_id, chat in st.session_state.chat_sessions.items():
+    sorted_sessions = sorted(
+        st.session_state.chat_sessions.values(),
+        key=lambda c: c.get("saved_at", ""),
+        reverse=True
+    )
 
-        if st.button(
-            chat["title"],
-            key=f"session_{chat_id}",
-            use_container_width=True
-        ):
-            st.session_state.current_chat_id = chat_id
-            st.session_state.show_new_session_form = False
+    for chat in sorted_sessions:
+
+        chat_id = chat["id"]
+
+        col_title, col_delete = st.columns([5, 1])
+
+        with col_title:
+            if st.button(
+                chat["title"],
+                key=f"session_{chat_id}",
+                use_container_width=True
+            ):
+                st.session_state.current_chat_id = chat_id
+                st.session_state.show_new_session_form = False
+
+        with col_delete:
+            if st.button(
+                "🗑",
+                key=f"delete_{chat_id}",
+                help="Delete this session"
+            ):
+                # Remove from ChromaDB
+                delete_session(chat_id)
+
+                # Remove from in-memory state
+                del st.session_state.chat_sessions[chat_id]
+
+                # If this was the active chat, reset to the form
+                if st.session_state.current_chat_id == chat_id:
+                    st.session_state.current_chat_id = None
+                    st.session_state.show_new_session_form = True
+
+                st.rerun()
 
     st.divider()
 
@@ -247,10 +371,42 @@ if (
 
         st.subheader("Observation Details")
 
-        location = st.text_input(
-            "📍 Observation Location",
-            placeholder="Singapore"
-        )
+        # Input location
+        col_location, col_validate = st.columns([4, 1])
+
+        with col_location:
+            location = st.text_input(
+                "📍 Observation Location",
+                placeholder="Singapore"
+            )
+
+        # Check if location is valid
+        with col_validate:
+            st.markdown("<br>", unsafe_allow_html=True)
+            validate_clicked = st.form_submit_button(
+                "Check Location",
+                use_container_width=True
+            )
+
+        if validate_clicked:
+
+            if not location.strip():
+                st.warning("Please enter a location first.")
+
+            else:
+                with st.spinner("Verifying location..."):
+
+                    location_valid, location_error = validate_location(
+                        location.strip()
+                    )
+
+                if location_valid:
+                    st.success(
+                        f"✅ Location found: {location.strip()}"
+                    )
+                else:
+                    st.error(location_error)
+
 
         col1, col2 = st.columns(2)
 
