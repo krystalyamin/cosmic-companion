@@ -5,11 +5,22 @@ UI created with Streamlit, and code generated with ChatGPT.
 """
 
 import uuid
-from datetime import datetime, date, time
+from datetime import date, time
 
 import streamlit as st
-from prompts import generate_initial_briefing, ask_stargazing_assistant
-from config import GROQ_API_KEY
+
+from orchestrator import process_user_request
+from services.llm_service import test_groq_connection
+from services.astronomy_service import get_astronomy_data
+from services.weather_service import (
+    test_weather_api_connection,
+    geocode_location
+)
+from services.memory_service import (
+    test_memory_connection,
+    save_session_data,
+    get_chat_history
+)
 
 # ============================================================
 # CONFIG
@@ -34,25 +45,71 @@ if "current_chat_id" not in st.session_state:
 if "show_new_session_form" not in st.session_state:
     st.session_state.show_new_session_form = True
 
+# Cache the last validated location so geocoding only fires
+# when the location field value actually changes
+if "location_validation" not in st.session_state:
+    st.session_state.location_validation = {
+        "last_input": None,   # the raw string that was checked
+        "is_valid":   None,   # True / False / None (not yet checked)
+        "error":      None    # human-readable error message
+    }
+
 
 # ============================================================
 # HELPERS
 # ============================================================
 
 
+def validate_location(location: str) -> tuple[bool, str | None]:
+    """
+    Call geocode_location and return (is_valid, error_message).
+
+    Results are cached in st.session_state so the geocoding API
+    is only called when the location string changes.
+    """
+
+    cache = st.session_state.location_validation
+
+    if cache["last_input"] == location:
+        return cache["is_valid"], cache["error"]
+
+    # New input — run the geocoding check
+    try:
+        geocode_location(location)
+        result   = (True, None)
+
+    except ValueError:
+        result = (
+            False,
+            f'Could not find "{location}". '
+            "Please enter a recognisable city, region, or address."
+        )
+
+    except Exception:
+        result = (
+            False,
+            "Unable to verify the location right now. "
+            "Please check your connection and try again."
+        )
+
+    st.session_state.location_validation = {
+        "last_input": location,
+        "is_valid":   result[0],
+        "error":      result[1]
+    }
+
+    return result
+
 def create_chat_title(session_data):
     """
-    Create a ChatGPT-style title.
+    Create a ChatGPT-style sidebar title from session data.
     """
 
     session_date = session_data["date"]
+    date_string = str(session_date)
 
-    if isinstance(session_date, date):
-        date_string = session_date.strftime("%d %b")
-    else:
-        date_string = str(session_date)
-
-    topic = session_data["goal"]
+    goals = session_data.get("goal", [])
+    topic = ", ".join(goals) if goals else "General Stargazing"
 
     return f"🌙 {date_string} | {session_data['location']} | {topic}"
 
@@ -68,29 +125,48 @@ def get_current_chat():
 
 def create_new_chat(session_data):
     """
-    Create a new chat session.
+    Create a new chat session and generate an opening briefing
+    by calling process_user_request with a fixed opening prompt.
     """
 
     chat_id = str(uuid.uuid4())
 
     title = create_chat_title(session_data)
 
-    initial_ai_message = generate_initial_briefing(session_data)
+    # Persist the session settings to ChromaDB before the first call
+    save_session_data(chat_id, session_data)
 
+    # Register the chat with an empty message list first so the
+    # session exists when process_user_request calls get_chat_history
     st.session_state.chat_sessions[chat_id] = {
         "id": chat_id,
         "title": title,
         "session_data": session_data,
-        "messages": [
-            {
-                "role": "assistant",
-                "content": initial_ai_message
-            }
-        ]
+        "messages": []
     }
 
     st.session_state.current_chat_id = chat_id
     st.session_state.show_new_session_form = False
+
+    # Generate the initial AI briefing via the real orchestrator
+    opening_prompt = (
+        "Please give me a full observing briefing for tonight's session. "
+        "Cover what's visible, the weather outlook, and your top recommended targets "
+        "for my equipment and goals."
+    )
+
+    initial_response = process_user_request(
+        session_id=chat_id,
+        session_data=session_data,
+        user_message=opening_prompt
+    )
+
+    # The orchestrator already persisted both messages in ChromaDB.
+    # Mirror them into Streamlit session state for display.
+    st.session_state.chat_sessions[chat_id]["messages"] = [
+        {"role": "user",      "content": opening_prompt},
+        {"role": "assistant", "content": initial_response}
+    ]
 
 
 # ============================================================
@@ -126,11 +202,30 @@ with st.sidebar:
 
     st.divider()
 
+    # --------------------------------------------------------
+    # Live API Status using real test functions
+    # --------------------------------------------------------
+
     st.subheader("API Status")
 
-    st.success("Groq API")
-    st.success("Astronomy API")
-    st.success("Weather API")
+    groq_ok      = test_groq_connection()
+    weather_ok   = test_weather_api_connection()
+    memory_ok    = test_memory_connection()
+
+    if groq_ok:
+        st.success("✅ Groq API")
+    else:
+        st.error("❌ Groq API")
+
+    if weather_ok:
+        st.success("✅ Weather API")
+    else:
+        st.error("❌ Weather API")
+
+    if memory_ok:
+        st.success("✅ Memory (ChromaDB)")
+    else:
+        st.error("❌ Memory (ChromaDB)")
 
 
 # ============================================================
@@ -145,9 +240,7 @@ if (
     st.title("🌌 AI Stargazing Planner")
 
     st.markdown(
-        """
-        Start a new observing session by filling out the details below.
-        """
+        "Start a new observing session by filling out the details below."
     )
 
     with st.form("observation_form"):
@@ -175,18 +268,12 @@ if (
 
         equipment = st.multiselect(
             "🔭 Equipment",
-            [
-                "Naked Eye",
-                "Binoculars",
-                "Telescope"
-            ],
+            ["Naked Eye", "Binoculars", "Telescope"],
             default=["Naked Eye"]
         )
 
         if not equipment:
-            st.error(
-                "Please select at least one piece of equipment."
-            )
+            st.error("Please select at least one piece of equipment.")
 
         if "Telescope" in equipment:
 
@@ -194,12 +281,7 @@ if (
 
             telescope_type = st.selectbox(
                 "Telescope Type",
-                [
-                    "Refractor",
-                    "Reflector",
-                    "Dobsonian",
-                    "Catadioptric"
-                ]
+                ["Refractor", "Reflector", "Dobsonian", "Catadioptric"]
             )
 
             aperture = st.number_input(
@@ -218,16 +300,12 @@ if (
 
         else:
             telescope_type = None
-            aperture = None
+            aperture      = None
             magnification = None
 
         experience = st.selectbox(
             "Experience Level",
-            [
-                "Beginner",
-                "Intermediate",
-                "Advanced"
-            ]
+            ["Beginner", "Intermediate", "Advanced"]
         )
 
         goal = st.multiselect(
@@ -256,27 +334,44 @@ if (
         if submitted:
 
             if not location.strip():
-                st.error(
-                    "Please enter an observation location."
-                )
+                st.error("Please enter an observation location.")
+
+            elif not equipment:
+                st.error("Please select at least one piece of equipment.")
+
             else:
-                session_data = {
-                    "location": location, # string
-                    "date": observation_date, # string
-                    "time": observation_time.strftime("%H:%M"), #string
-                    "equipment": equipment, # list of strings (naked eye, binoculars, telescope)
-                    "experience": experience, # string (beginner, intermediate, or advanced)
-                    "goal": goal, # list of strings ("Visible Planets", "Moon Viewing", "Deep Sky Objects", "Meteor Shower", "Astrophotography", "General Stargazing")
-                    "target": target, # string (optional, so could be an emptyy string)
-                    # optional fields, only not None if "Telescope" is listed under "Equipment"
-                    "telescope_type": telescope_type, # string
-                    "aperture": aperture, # integer
-                    "magnification": magnification #integer
-                }
+                # Validate the location via geocoding before proceeding
+                with st.spinner("Verifying location..."):
+                    location_valid, location_error = validate_location(
+                        location.strip()
+                    )
 
-                create_new_chat(session_data)
+                if not location_valid:
+                    st.error(location_error)
 
-                st.rerun()
+                else:
+                    session_data = {
+                        # date stored as YYYY-MM-DD string so all services
+                        # receive the format they expect
+                        "location":       location.strip(),
+                        "date":           observation_date.isoformat(),
+                        "time":           observation_time.strftime("%H:%M"),
+                        "equipment":      equipment,
+                        "experience":     experience,
+                        "goal":           goal,
+                        "target":         target.strip(),
+                        # telescope fields — None when no telescope selected
+                        "telescope_type": telescope_type,
+                        "aperture":       aperture,
+                        "magnification":  magnification
+                    }
+
+                    with st.spinner(
+                        "Setting up your session and fetching astronomy data..."
+                    ):
+                        create_new_chat(session_data)
+
+                    st.rerun()
 
 
 # ============================================================
@@ -315,12 +410,15 @@ else:
             )
 
         with col3:
-            st.write(f"🎯 **Goal:** {session_data['goal']}")
+            goals_display = (
+                ", ".join(session_data["goal"])
+                if session_data["goal"]
+                else "General Stargazing"
+            )
+            st.write(f"🎯 **Goal:** {goals_display}")
 
-            if session_data["target"]:
-                st.write(
-                    f"⭐ **Target:** {session_data['target']}"
-                )
+            if session_data.get("target"):
+                st.write(f"⭐ **Target:** {session_data['target']}")
 
     st.write("")
 
@@ -343,33 +441,30 @@ else:
 
     if user_prompt:
 
+        # Show user message immediately
         current_chat["messages"].append(
-            {
-                "role": "user",
-                "content": user_prompt
-            }
+            {"role": "user", "content": user_prompt}
         )
 
         with st.chat_message("user"):
             st.markdown(user_prompt)
 
+        # Generate AI response via orchestrator
         with st.chat_message("assistant"):
-
             with st.spinner("Consulting the stars..."):
 
-                response = ask_stargazing_assistant(
-                    user_prompt,
-                    session_data,
-                    current_chat["messages"]
+                response = process_user_request(
+                    session_id=current_chat["id"],
+                    session_data=session_data,
+                    user_message=user_prompt
                 )
 
                 st.markdown(response)
 
+        # Mirror assistant reply into Streamlit session state
+        # (orchestrator already persisted both sides in ChromaDB)
         current_chat["messages"].append(
-            {
-                "role": "assistant",
-                "content": response
-            }
+            {"role": "assistant", "content": response}
         )
 
         st.rerun()
