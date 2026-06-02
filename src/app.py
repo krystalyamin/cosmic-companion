@@ -63,6 +63,135 @@ if "location_validation" not in st.session_state:
         "error":      None    # human-readable error message
     }
 
+# Set to a warning string if loading past sessions from ChromaDB
+# fails on startup — displayed as a non-blocking banner
+if "db_load_warning" not in st.session_state:
+    st.session_state.db_load_warning = None
+
+
+# ============================================================
+# ERROR DETECTION HELPERS
+# ============================================================
+
+# Prefixes that the orchestrator and individual services use when
+# they catch an exception and return a plain-text error string.
+_ERROR_PREFIXES = (
+    "Unable to process",
+    "Unable to generate",
+    "Unable to retrieve",
+    "Error:",
+    "error",
+)
+
+def _is_error_response(text: str) -> bool:
+    """
+    Return True if *text* looks like an error string returned by
+    the orchestrator or one of the service layers, rather than a
+    genuine AI answer.
+    """
+    if not text:
+        return True
+    lowered = text.lower().strip()
+    return any(lowered.startswith(p.lower()) for p in _ERROR_PREFIXES)
+
+
+def _classify_error(text: str) -> dict:
+    """
+    Inspect an error string and return a dict with:
+        title       – short heading shown in st.error
+        detail      – one-line explanation
+        actions     – list of bullet-point steps the user can take
+    """
+    lowered = text.lower()
+
+    if "groq" in lowered or "llm" in lowered or "completion" in lowered:
+        return {
+            "title":   "🤖 AI Service Unavailable (Groq API)",
+            "detail":  "The language model could not be reached.",
+            "actions": [
+                "Check that your `GROQ_API_KEY` in `.env` is correct and not expired.",
+                "Visit [Groq status page](https://status.groq.com) to check for outages.",
+                "Confirm your network connection is active.",
+                "If the key is valid, wait a moment and try again — the API may be rate-limiting.",
+            ],
+        }
+
+    if "astronomy" in lowered or "planet" in lowered or "astronomyapi" in lowered:
+        return {
+            "title":   "🔭 Astronomy Data Unavailable",
+            "detail":  "Could not fetch planet or moon data for your session.",
+            "actions": [
+                "Check that `ASTRONOMY_API_ID` and `ASTRONOMY_API_SECRET` are set in `.env`.",
+                "Visit [AstronomyAPI status](https://astronomyapi.com) to check for outages.",
+                "Confirm your account has remaining API credits.",
+                "Your session will continue — the AI will note that live sky data is unavailable.",
+            ],
+        }
+
+    if "weather" in lowered or "forecast" in lowered or "open-meteo" in lowered:
+        return {
+            "title":   "🌤 Weather Data Unavailable",
+            "detail":  "Could not retrieve the weather forecast for your location.",
+            "actions": [
+                "Open-Meteo is a free public API — check [open-meteo.com](https://open-meteo.com) for outages.",
+                "Ensure your network allows outbound HTTPS traffic.",
+                "Weather data will be skipped; astronomy recommendations will still work.",
+            ],
+        }
+
+    if "chroma" in lowered or "memory" in lowered or "collection" in lowered:
+        return {
+            "title":   "💾 Memory Service Unavailable (ChromaDB)",
+            "detail":  "Could not save or retrieve conversation history.",
+            "actions": [
+                "Check that `CHROMA_DB_PATH` in `.env` points to a writable directory.",
+                "Ensure the ChromaDB package is installed: `pip install chromadb`.",
+                "Restart the application — ChromaDB sometimes needs a clean process.",
+            ],
+        }
+
+    if "coordinates" in lowered or "geocod" in lowered or "location" in lowered:
+        return {
+            "title":   "📍 Location Could Not Be Found",
+            "detail":  "The location you entered could not be geocoded to coordinates.",
+            "actions": [
+                "Try a more specific location name, e.g. \"Singapore\" or \"New York, USA\".",
+                "Avoid special characters or abbreviations.",
+                "Check your network connection (geocoding uses an external API).",
+            ],
+        }
+
+    # Generic fallback
+    return {
+        "title":   "⚠️ Something Went Wrong",
+        "detail":  "An unexpected error occurred while processing your request.",
+        "actions": [
+            "Check the terminal / logs for a more detailed traceback.",
+            "Verify all API keys in your `.env` file are correct.",
+            "Restart the Streamlit app: `streamlit run app.py`.",
+        ],
+    }
+
+
+def _render_error_card(text: str) -> None:
+    """
+    Display a structured, actionable error card using st.error
+    and st.expander so the raw message is accessible if needed.
+    """
+    info = _classify_error(text)
+
+    st.error(f"**{info['title']}**\n\n{info['detail']}")
+
+    with st.expander("What can I do?", expanded=True):
+        for action in info["actions"]:
+            st.markdown(f"- {action}")
+
+    with st.expander("Technical details", expanded=False):
+        st.code(text, language=None)
+
+
+if "pending_error" not in st.session_state:
+    st.session_state.pending_error = None
 
 # ============================================================
 # STARTUP: load persisted sessions from ChromaDB
@@ -141,9 +270,13 @@ def load_sessions_from_db() -> None:
                 "saved_at":     metadata.get("saved_at", "")
             }
 
-    except Exception:
-        # Never crash the app over a history load failure
-        pass
+    except Exception as exc:
+        # Surface a non-blocking warning so the user knows
+        # past sessions could not be loaded, without crashing.
+        st.session_state.db_load_warning = (
+            f"⚠️ Could not load previous sessions from memory: {exc}. "
+            "Check that ChromaDB is configured correctly in your `.env` file."
+        )
 
 
 if not st.session_state.sessions_loaded:
@@ -213,10 +346,14 @@ def get_current_chat():
     return st.session_state.chat_sessions.get(chat_id)
 
 
-def create_new_chat(session_data):
+def create_new_chat(session_data) -> bool:
     """
     Create a new chat session and generate an opening briefing
     by calling process_user_request with a fixed opening prompt.
+
+    Returns:
+        True  — session created and opening briefing generated OK.
+        False — a service error occurred; caller should show error UI.
     """
 
     from datetime import datetime, timezone
@@ -227,7 +364,13 @@ def create_new_chat(session_data):
     saved_at = datetime.now(timezone.utc).isoformat()
 
     # Persist the session settings to ChromaDB before the first call
-    save_session_data(chat_id, session_data)
+    try:
+        save_session_data(chat_id, session_data)
+    except Exception as exc:
+        st.session_state.pending_error = (
+            f"Unable to save session to memory: {exc}"
+        )
+        return False
 
     # Register the chat with an empty message list first so the
     # session exists when process_user_request calls get_chat_history
@@ -261,6 +404,13 @@ def create_new_chat(session_data):
         {"role": "user",      "content": opening_prompt},
         {"role": "assistant", "content": initial_response}
     ]
+
+    # Store whether the opening response was an error so the chat
+    # view can render it with the appropriate error card.
+    if _is_error_response(initial_response):
+        st.session_state.chat_sessions[chat_id]["opening_error"] = True
+
+    return True
 
 
 # ============================================================
@@ -340,16 +490,34 @@ with st.sidebar:
         st.success("✅ Groq API")
     else:
         st.error("❌ Groq API")
+        st.caption(
+            "Check `GROQ_API_KEY` in `.env` and confirm your "
+            "[Groq account](https://console.groq.com) is active."
+        )
 
     if weather_ok:
         st.success("✅ Weather API")
     else:
         st.error("❌ Weather API")
+        st.caption(
+            "Open-Meteo is a free public API. "
+            "Check your network connection or visit "
+            "[open-meteo.com](https://open-meteo.com) for status."
+        )
 
     if memory_ok:
         st.success("✅ Memory (ChromaDB)")
     else:
         st.error("❌ Memory (ChromaDB)")
+        st.caption(
+            "Check `CHROMA_DB_PATH` in `.env` and ensure the "
+            "directory exists and is writable."
+        )
+
+    # Non-blocking warning if past sessions failed to load on startup
+    if st.session_state.db_load_warning:
+        st.divider()
+        st.warning(st.session_state.db_load_warning)
 
 
 # ============================================================
@@ -525,9 +693,15 @@ if (
                     with st.spinner(
                         "Setting up your session and fetching astronomy data..."
                     ):
-                        create_new_chat(session_data)
+                        success = create_new_chat(session_data)
 
-                    st.rerun()
+                    if not success:
+                        # create_new_chat stored the error in pending_error
+                        error_text = st.session_state.pending_error or "Unknown error"
+                        st.session_state.pending_error = None
+                        _render_error_card(error_text)
+                    else:
+                        st.rerun()
 
 
 # ============================================================
@@ -582,10 +756,17 @@ else:
     # Chat Messages
     # --------------------------------------------------------
 
-    for message in current_chat["messages"]:
+    for i, message in enumerate(current_chat["messages"]):
 
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+
+            if (
+                message["role"] == "assistant"
+                and _is_error_response(message["content"])
+            ):
+                _render_error_card(message["content"])
+            else:
+                st.markdown(message["content"])
 
     # --------------------------------------------------------
     # Chat Input
@@ -615,6 +796,9 @@ else:
                     user_message=user_prompt
                 )
 
+            if _is_error_response(response):
+                _render_error_card(response)
+            else:
                 st.markdown(response)
 
         # Mirror assistant reply into Streamlit session state
