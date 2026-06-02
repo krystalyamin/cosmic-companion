@@ -17,8 +17,9 @@ from datetime import datetime
 import requests
 
 
-GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
 
 # ==========================================================
 # Location Processing
@@ -42,7 +43,7 @@ def geocode_location(location: str):
     """
 
     response = requests.get(
-        GEOCODING_URL,
+        OPEN_METEO_GEOCODING_URL,
         params={
             "name": location,
             "count": 1,
@@ -65,6 +66,72 @@ def geocode_location(location: str):
         results[0]["latitude"],
         results[0]["longitude"]
     )
+
+
+def get_elevation(latitude: float, longitude: float) -> float:
+    """
+    Retrieve elevation (meters above sea level) for a location.
+
+    Parameters:
+        latitude (float)
+        longitude (float)
+
+    Returns:
+        float:
+            Elevation in meters.
+
+    Raises:
+        ValueError:
+            If the API returns invalid data.
+        requests.RequestException:
+            If the API request fails.
+    """
+
+    try:
+        response = requests.get(
+            OPEN_METEO_ELEVATION_URL,
+            params={
+                "latitude": latitude,
+                "longitude": longitude
+            },
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        elevations = data.get("elevation")
+
+        if elevations is None:
+            raise ValueError(
+                "Elevation data not returned by API."
+            )
+
+        # Open-Meteo returns a list even for a single coordinate
+        if isinstance(elevations, list):
+            if not elevations:
+                raise ValueError(
+                    "Empty elevation data returned by API."
+                )
+            return float(elevations[0])
+
+        return float(elevations)
+
+    except requests.Timeout:
+        raise ValueError(
+            "Request to Open-Meteo elevation service timed out."
+        )
+
+    except requests.RequestException as e:
+        raise ValueError(
+            f"Failed to retrieve elevation data: {e}"
+        )
+
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            f"Invalid elevation response: {e}"
+        )
 
 
 # ==========================================================

@@ -20,7 +20,7 @@ load_dotenv()
 PROJECT_ROOT_PATH = os.getenv("PROJECT_ROOT_PATH")
 
 sys.path.insert(1, f"{PROJECT_ROOT_PATH}src/services/")
-from weather_service import geocode_location
+from weather_service import geocode_location, get_elevation
 
 ASTRONOMY_API_ID = os.getenv("ASTRONOMY_API_ID")
 ASTRONOMY_API_SECRET = os.getenv("ASTRONOMY_API_SECRET")
@@ -41,6 +41,7 @@ if not IPGEO_API_KEY:
 def get_visible_planets(
     latitude: float,
     longitude: float,
+    elevation: float,
     date: str,
     time: str
 ) -> list:
@@ -88,7 +89,7 @@ def get_visible_planets(
             params={
                 "latitude": latitude,
                 "longitude": longitude,
-                "elevation": 0, 
+                "elevation": elevation, 
                 "from_date": date,
                 "to_date": date,
                 "time": formatted_time
@@ -328,9 +329,12 @@ def get_astronomy_data(
             session_data["location"]
         )
 
+        elevation = get_elevation(latitude, longitude)
+
         visible_planets = get_visible_planets(
             latitude,
             longitude,
+            elevation,
             session_data["date"],
             session_data["time"]
         )
@@ -344,6 +348,7 @@ def get_astronomy_data(
         astronomy_data = {
             "latitude": latitude,
             "longitude": longitude,
+            "elevation": elevation,
             "visible_planets": visible_planets,
             "moon": moon_data
         }
