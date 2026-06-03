@@ -197,9 +197,9 @@ def get_moon_data(
 
         return {
             "phase": data.get("moon_phase"),
-            "illumination": data.get(
+            "illumination": abs(float(data.get(
                 "moon_illumination_percentage"
-            ),
+            ))),
             "moonrise": data.get("moonrise"),
             "moonset": data.get("moonset")
         }
