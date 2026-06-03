@@ -38,8 +38,7 @@ def build_llm_context(
     session_data: dict,
     astronomy_data: dict,
     weather_data: dict,
-    chat_history: list,
-    user_message: str
+    chat_history: list
 ) -> str:
     """
     Build the final context string sent to Groq.
@@ -135,8 +134,7 @@ def generate_stargazing_response(
             session_data=session_data,
             astronomy_data=astronomy_data,
             weather_data=weather_data,
-            chat_history=chat_history,
-            user_message=user_message
+            chat_history=chat_history
         )
 
         client = Groq(
