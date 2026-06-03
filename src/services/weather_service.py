@@ -13,12 +13,14 @@ Functions:
     test_weather_api_connection()
 """
 
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 import requests
 
 
-OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 OPEN_METEO_ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
 
 # ==========================================================
@@ -138,6 +140,14 @@ def get_elevation(latitude: float, longitude: float) -> float:
 # General Weather Data
 # ==========================================================
 
+def safe_hourly_value(hourly, field, index, default=None):
+    try:
+        value = hourly[field][index]
+        return default if value is None else value
+    except (KeyError, IndexError, TypeError):
+        return default
+    
+
 def get_weather_forecast(
     latitude: float,
     longitude: float,
@@ -145,25 +155,38 @@ def get_weather_forecast(
     time: str
 ) -> dict:
     """
-    Retrieve weather conditions relevant to stargazing.
+    Retrieve weather conditions for a specific location and datetime.
 
     Parameters:
         latitude (float)
         longitude (float)
-        date (str) : YYYY-MM-DD
-        time (str) : HH:MM
+        date (str): YYYY-MM-DD
+        time (str): HH:MM
 
     Returns:
         dict:
-            Structured weather forecast information.
+            Structured weather information.
     """
 
     try:
+        target_datetime = datetime.fromisoformat(
+            f"{date}T{time}"
+        )
+
+        now = datetime.now()
+
+        if target_datetime <= now:
+            api_url = OPEN_METEO_ARCHIVE_URL
+        else:
+            api_url = OPEN_METEO_FORECAST_URL
+
         response = requests.get(
-            OPEN_METEO_FORECAST_URL,
+            api_url,
             params={
                 "latitude": latitude,
                 "longitude": longitude,
+                "start_date": date,
+                "end_date": date,
                 "hourly": (
                     "temperature_2m,"
                     "cloud_cover,"
@@ -181,38 +204,41 @@ def get_weather_forecast(
 
         data = response.json()
 
-        target_datetime = f"{date}T{time}"
+        hourly = data.get("hourly")
 
-        hourly_times = data["hourly"]["time"]
-
-        if target_datetime not in hourly_times:
+        if not hourly:
             raise ValueError(
-                f"No forecast available for {target_datetime}"
+                "Hourly weather data not available."
             )
 
-        index = hourly_times.index(target_datetime)
+        target_hour = f"{date}T{time}"
+
+        hourly_times = hourly.get("time", [])
+
+        if target_hour not in hourly_times:
+            raise ValueError(
+                f"No weather data available for {target_hour}"
+            )
+
+        index = hourly_times.index(target_hour)
 
         weather_data = {
-            "datetime": target_datetime,
-            "temperature_c": (
-                data["hourly"]["temperature_2m"][index]
+            "datetime": target_hour,
+            "temperature_c": safe_hourly_value(hourly, "temperature_2m", index),
+            "cloud_cover_percent": safe_hourly_value(hourly, "cloud_cover", index, 100),
+            "visibility_m": safe_hourly_value(hourly, "visibility", index, 0),
+            "humidity_percent": safe_hourly_value(hourly, "relative_humidity_2m", index),
+            "precipitation_probability_percent": safe_hourly_value(
+                hourly,
+                "precipitation_probability",
+                index,
+                100
             ),
-            "cloud_cover_percent": (
-                data["hourly"]["cloud_cover"][index]
-            ),
-            "visibility_m": (
-                data["hourly"]["visibility"][index]
-            ),
-            "humidity_percent": (
-                data["hourly"]["relative_humidity_2m"][index]
-            ),
-            "precipitation_probability_percent": (
-                data["hourly"][
-                    "precipitation_probability"
-                ][index]
-            ),
-            "wind_speed_kmh": (
-                data["hourly"]["wind_speed_10m"][index]
+            "wind_speed_kmh": safe_hourly_value(
+                hourly,
+                "wind_speed_10m",
+                index,
+                100
             )
         }
 
@@ -223,6 +249,16 @@ def get_weather_forecast(
         )
 
         return weather_data
+
+    except requests.Timeout:
+        return {
+            "error": "Weather request timed out."
+        }
+
+    except requests.RequestException as e:
+        return {
+            "error": f"Weather API request failed: {e}"
+        }
 
     except Exception as e:
         return {
@@ -235,34 +271,41 @@ def calculate_stargazing_conditions(
 ) -> dict:
     """
     Convert raw weather data into stargazing-friendly metrics.
-
-    Parameters:
-        weather_data (dict)
-
-    Returns:
-        dict:
-            Cloud cover, visibility score,
-            and observing quality assessment.
     """
 
     try:
-        cloud_cover = weather_data.get(
-            "cloud_cover_percent",
+
+        def safe_number(
+            value,
+            default
+        ):
+            if value is None:
+                return default
+
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        cloud_cover = safe_number(
+            weather_data.get("cloud_cover_percent"),
             100
         )
 
-        visibility = weather_data.get(
-            "visibility_m",
+        visibility = safe_number(
+            weather_data.get("visibility_m"),
             0
         )
 
-        precipitation = weather_data.get(
-            "precipitation_probability_percent",
+        precipitation = safe_number(
+            weather_data.get(
+                "precipitation_probability_percent"
+            ),
             100
         )
 
-        wind_speed = weather_data.get(
-            "wind_speed_kmh",
+        wind_speed = safe_number(
+            weather_data.get("wind_speed_kmh"),
             100
         )
 
@@ -288,7 +331,13 @@ def calculate_stargazing_conditions(
         elif wind_speed > 25:
             score -= 8
 
-        score = max(0, min(100, round(score)))
+        score = max(
+            0,
+            min(
+                100,
+                round(score)
+            )
+        )
 
         if score >= 80:
             quality = "Excellent"
