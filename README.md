@@ -86,8 +86,8 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 ### Example 1 — Beginner with binoculars
 
 **Session setup:**
-- Location: Singapore
-- Date: 2026-08-15
+- Location: Punggol
+- Date: 2026-06-01
 - Time: 21:00
 - Equipment: Binoculars
 - Experience: Beginner
@@ -95,11 +95,11 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 
 **AI response (excerpt):**
 
->**Recommended Targets:** My top recommendation for tonight, considering your equipment and goals, is the Moon. It's a full moon, which makes it a reliable and easy target to observe. The Moon is always a fascinating sight, and with your naked eye, you can observe its phases and surface features like craters and mare.
->
->**Equipment Advice:** Since you're using the naked eye, make sure to find a spot with minimal light pollution to get the best view. While the Moon is easily visible to the naked eye, the low-horizon positions of Venus and Jupiter might be more difficult without any optical aid.
->
->**Viewing Tips:** For observing the Moon, try to find a comfortable spot where you can sit and enjoy the view without straining your neck. Look for the different shades and textures on the Moon's surface. If you decide to try and spot Venus or Jupiter, look towards the west (azimuth around 294 degrees for Venus and 292 degrees for Jupiter), but be aware that they are low on the horizon and might be hard to see clearly.
+> Weather Outlook: The weather conditions for tonight are not ideal for stargazing. The cloud cover is 100%, with a visibility of 0 meters, and a precipitation probability of 100%. The stargazing conditions are rated as 'Very Poor' with a stargazing score of 0. This means that it's unlikely you'll be able to see any celestial objects clearly.
+> 
+> Equipment Advice: You're using binoculars, which are suitable for observing planets and other bright objects. However, given the poor weather conditions, it's unlikely you'll be able to get a good view of any celestial objects.
+> 
+> Viewing Tips and Recommended Targets: Considering the weather and your equipment, I would not recommend attempting to observe any targets tonight. The overcast conditions and heavy cloud cover will make it difficult to see anything. If the weather were clearer, Venus and Jupiter would be my top recommended targets for you, given your goal of observing visible planets. However, under these conditions, it's best to postpone your observing session until the weather improves.
 
 ---
 
