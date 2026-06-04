@@ -79,7 +79,7 @@ Beginner stargazers often do not know which celestial objects are visible on a g
    - AstronomyAPI: https://astronomyapi.com
    - IPGeolocation: https://ipgeolocation.io
 
-6. **Run the application**
+5. **Run the application**
 
    ```bash
    cd src
