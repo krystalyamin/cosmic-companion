@@ -582,7 +582,6 @@ if (
             observation_date = st.date_input(
                 "📅 Observation Date",
                 value=date.today(),
-                min_value=date.today(),
                 max_value=date.today() + timedelta(days=16),
                 help="You can select a date up to 16 days in the future."
             )
