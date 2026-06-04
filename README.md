@@ -132,6 +132,8 @@ The application remembered the location, date, time, and equipment from the orig
 
 - **Forecast range:** The Open-Meteo API only provides forecasts up to approximately 16 days ahead. Entering a date beyond that window will return an error rather than weather data.
 
+- **Limited Astronomical data:** The APIs used only return information about the planets and the moon. A future version should use a more robust API or supplemental APIs to get information about constellations and individual stars as well. 
+
 - **Deep sky object positions:** The current recommendation engine suggests well-known deep sky objects (Orion Nebula, Andromeda Galaxy, Pleiades) based on equipment type and goals, but does not verify whether those objects are actually above the horizon for the chosen location and date. A future version should cross-check against real altitude data before recommending them.
 
 ---
