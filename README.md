@@ -70,7 +70,7 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 
    `PROJECT_ROOT_PATH` should be the full absolute path of the root of the project. For example:
    ```
-   ~/Git/cosmic-companion/        # macOS / Linux
+   /home/user/Git/cosmic-companion/        # macOS / Linux
    C:/Git/cosmic-companion/       # Windows
    ```
 
