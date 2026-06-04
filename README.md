@@ -33,7 +33,7 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 
    ```bash
    git clone https://github.com/krystalyamin/cosmic-companion.git
-   cd cosmic-companion/src
+   cd cosmic-companion
    ```
 
 2. **Create and activate a virtual environment**
@@ -47,7 +47,7 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 3. **Install dependencies**
 
    ```bash
-   pip install -r requirements.txt
+   pip install -r src/requirements.txt
    ```
 
 4. **Configure environment variables**
@@ -68,14 +68,21 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 	ASTRONOMY_API_SECRET=<astronomyapi-secret-here: https://astronomyapi.com>
    ```
 
+   `PROJECT_ROOT_PATH` should be the full absolute path of the root of the project. For example:
+   ```
+   ~/Git/cosmic-companion/        # macOS / Linux
+   C:/Git/cosmic-companion/       # Windows
+   ```
+
    API keys can be obtained for free from:
    - Groq: https://console.groq.com
    - AstronomyAPI: https://astronomyapi.com
    - IPGeolocation: https://ipgeolocation.io
 
-5. **Run the application**
+6. **Run the application**
 
    ```bash
+   cd src
    streamlit run app.py
    ```
 
