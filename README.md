@@ -1,6 +1,7 @@
-# cosmic-companion
+# Cosmic Companion
 
-Cosmic Companion: The AI-powered chatbot that helps you plan your stargazing sessions!
+The AI-powered chatbot that helps you plan your stargazing sessions!
+
 Try it here: https://cosmic-companion.streamlit.app/
 
 ---

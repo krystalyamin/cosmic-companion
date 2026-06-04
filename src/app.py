@@ -34,7 +34,7 @@ from services.memory_service import (
 # ============================================================
 
 st.set_page_config(
-    page_title="AI Stargazing Planner",
+    page_title="Cosmic Companion",
     page_icon="🌌",
     layout="wide"
 )
@@ -422,7 +422,7 @@ def create_new_chat(session_data) -> bool:
 
 with st.sidebar:
 
-    st.title("🌌 Stargazing Planner")
+    st.title("🌌 Cosmic Companion")
 
     if st.button(
         "➕ New Stargazing Session",
@@ -553,7 +553,7 @@ if (
     or st.session_state.current_chat_id is None
 ):
 
-    st.title("🌌 AI Stargazing Planner")
+    st.title("🌌 Stargazing Planner")
 
     st.markdown(
         "Start a new observing session by filling out the details below."
@@ -747,7 +747,7 @@ else:
     # Session Summary Card
     # --------------------------------------------------------
 
-    st.title("🌌 AI Stargazing Planner")
+    st.title("🌌 Stargazing Planner")
 
     with st.container(border=True):
 
