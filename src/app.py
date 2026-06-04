@@ -12,7 +12,10 @@ import streamlit as st
 
 from orchestrator import process_user_request
 from services.llm_service import test_groq_connection
-from services.astronomy_service import get_astronomy_data
+from services.astronomy_service import (
+    test_astronomy_api_connection,
+    test_moon_api_connection
+)
 from services.weather_service import (
     test_weather_api_connection,
     geocode_location
@@ -482,9 +485,11 @@ with st.sidebar:
 
     st.subheader("API Status")
 
-    groq_ok      = test_groq_connection()
-    weather_ok   = test_weather_api_connection()
-    memory_ok    = test_memory_connection()
+    groq_ok       = test_groq_connection()
+    weather_ok    = test_weather_api_connection()
+    astronomy_ok  = test_astronomy_api_connection()
+    moon_ok       = test_moon_api_connection()
+    memory_ok     = test_memory_connection()
 
     if groq_ok:
         st.success("✅ Groq API")
@@ -503,6 +508,25 @@ with st.sidebar:
             "Open-Meteo is a free public API. "
             "Check your network connection or visit "
             "[open-meteo.com](https://open-meteo.com) for status."
+        )
+
+    if astronomy_ok:
+        st.success("✅ Astronomy API")
+    else:
+        st.error("❌ Astronomy API")
+        st.caption(
+            "Check `ASTRONOMY_API_ID` and "
+            "`ASTRONOMY_API_SECRET` in `.env` or verify "
+            "AstronomyAPI service availability."
+        )
+
+    if moon_ok:
+        st.success("✅ Moon API")
+    else:
+        st.error("❌ Moon API")
+        st.caption(
+            "Check `IPGEO_API_KEY` in `.env` or verify "
+            "IPGeolocation Astronomy API availability."
         )
 
     if memory_ok:

@@ -373,4 +373,47 @@ def get_astronomy_data(
             "recommended_targets": []
         }
     
-    
+# ==========================================================
+# API Health Checks
+# ==========================================================
+
+def test_astronomy_api_connection() -> bool:
+    """
+    Verify AstronomyAPI credentials and connectivity.
+    """
+
+    try:
+
+        response = requests.get(
+            f"{ASTRONOMY_API_URL}v2/bodies",
+            auth=(ASTRONOMY_API_ID, ASTRONOMY_API_SECRET),
+            timeout=10
+        )
+
+        return response.status_code == 200
+
+    except Exception:
+        return False
+
+
+def test_moon_api_connection() -> bool:
+    """
+    Verify IPGeolocation astronomy API connectivity.
+    """
+
+    try:
+
+        response = requests.get(
+            "https://api.ipgeolocation.io/astronomy",
+            params={
+                "apiKey": IPGEO_API_KEY,
+                "lat": 1.3521,
+                "long": 103.8198
+            },
+            timeout=10
+        )
+
+        return response.status_code == 200
+
+    except Exception:
+        return False
