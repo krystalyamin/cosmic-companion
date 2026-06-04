@@ -33,7 +33,7 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 
    ```bash
    git clone https://github.com/krystalyamin/cosmic-companion.git
-   cd cosmic-companion
+   cd cosmic-companion/src
    ```
 
 2. **Create and activate a virtual environment**
@@ -47,7 +47,7 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 3. **Install dependencies**
 
    ```bash
-   pip install -r src/requirements.txt
+   pip install -r requirements.txt
    ```
 
 4. **Configure environment variables**
@@ -68,21 +68,14 @@ Beginner stargazers often do not know which celestial objects are visible on a g
 	ASTRONOMY_API_SECRET=<astronomyapi-secret-here: https://astronomyapi.com>
    ```
 
-   `PROJECT_ROOT_PATH` should be the full absolute path of the root of the project. For example:
-   ```
-   /home/user/Git/cosmic-companion/        # macOS / Linux
-   C:/Git/cosmic-companion/       # Windows
-   ```
-
    API keys can be obtained for free from:
    - Groq: https://console.groq.com
    - AstronomyAPI: https://astronomyapi.com
    - IPGeolocation: https://ipgeolocation.io
 
-6. **Run the application**
+5. **Run the application**
 
    ```bash
-   cd src
    streamlit run app.py
    ```
 
@@ -131,6 +124,8 @@ The application remembered the location, date, time, and equipment from the orig
 - **Limited to one location and time per session:** The chatbot cannot help with prompts that involve a range of locations or timings.
 
 - **Forecast range:** The Open-Meteo API only provides forecasts up to approximately 16 days ahead. Entering a date beyond that window will return an error rather than weather data.
+
+- **Limited Astronomical data:** The APIs used only return information about the planets and the moon. A future version should use a more robust API or supplemental APIs to get information about constellations and individual stars as well. 
 
 - **Deep sky object positions:** The current recommendation engine suggests well-known deep sky objects (Orion Nebula, Andromeda Galaxy, Pleiades) based on equipment type and goals, but does not verify whether those objects are actually above the horizon for the chosen location and date. A future version should cross-check against real altitude data before recommending them.
 
