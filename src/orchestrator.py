@@ -22,13 +22,74 @@ from services.llm_service import (
 )
 
 
+def fetch_session_api_data(
+    session_data: dict
+) -> tuple[dict, dict]:
+    """
+    Fetch astronomy and weather data for a session.
+
+    Separated from process_user_request so the caller (e.g. the
+    Streamlit UI) can cache the results and pass them back on
+    subsequent turns, avoiding redundant API calls.
+
+    Parameters:
+        session_data (dict): Observation session settings.
+
+    Returns:
+        tuple: (astronomy_data, weather_data)
+    """
+
+    astronomy_data = get_astronomy_data(session_data)
+
+    print("[fetch_session_api_data] Astronomy data: ", astronomy_data)
+
+    latitude = astronomy_data.get("latitude")
+    longitude = astronomy_data.get("longitude")
+
+    if latitude is not None and longitude is not None:
+
+        weather_data = get_weather_forecast(
+            latitude=latitude,
+            longitude=longitude,
+            date=session_data["date"],
+            time=session_data["time"]
+        )
+
+    else:
+
+        weather_data = {
+            "error":
+                "Unable to retrieve coordinates "
+                "for weather lookup."
+        }
+
+    return astronomy_data, weather_data
+
+
 def process_user_request(
     session_id: str,
     session_data: dict,
-    user_message: str
+    user_message: str,
+    astronomy_data: dict | None = None,
+    weather_data: dict | None = None
 ) -> str:
     """
     Main application workflow.
+
+    Parameters:
+        session_id (str)
+        session_data (dict)
+        user_message (str)
+        astronomy_data (dict | None):
+            Pre-fetched astronomy data. When supplied, no new API
+            call is made. Pass None to fetch fresh data (e.g. on
+            the first turn of a session).
+        weather_data (dict | None):
+            Pre-fetched weather data. Same caching semantics as
+            astronomy_data.
+
+    Returns:
+        str: Final AI-generated response.
     """
 
     try:
@@ -43,41 +104,16 @@ def process_user_request(
         )
 
         # ----------------------------------
-        # Astronomy data
+        # Astronomy + weather data
+        # (fetch only when not cached)
         # ----------------------------------
 
-        astronomy_data = get_astronomy_data(
-            session_data
-        )
+        if astronomy_data is None or weather_data is None:
 
-        # ----------------------------------
-        # Weather data
-        # ----------------------------------
-
-        latitude = astronomy_data.get(
-            "latitude"
-        )
-
-        longitude = astronomy_data.get(
-            "longitude"
-        )
-
-        if latitude is not None and longitude is not None:
-
-            weather_data = get_weather_forecast(
-                latitude=latitude,
-                longitude=longitude,
-                date=session_data["date"],
-                time=session_data["time"]
+            astronomy_data, weather_data = fetch_session_api_data(
+                session_data
             )
 
-        else:
-
-            weather_data = {
-                "error":
-                    "Unable to retrieve coordinates "
-                    "for weather lookup."
-            }
 
         # ----------------------------------
         # Retrieve memory

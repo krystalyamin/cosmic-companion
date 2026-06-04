@@ -329,7 +329,11 @@ def get_astronomy_data(
             session_data["location"]
         )
 
-        elevation = get_elevation(latitude, longitude)
+        try:
+            elevation = get_elevation(latitude, longitude)
+        except:
+            elevation = 0
+
 
         visible_planets = get_visible_planets(
             latitude,

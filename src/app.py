@@ -10,7 +10,7 @@ from datetime import date, time, timedelta
 
 import streamlit as st
 
-from orchestrator import process_user_request
+from orchestrator import process_user_request, fetch_session_api_data
 from services.llm_service import test_groq_connection
 from services.astronomy_service import (
     test_astronomy_api_connection,
@@ -101,9 +101,9 @@ def _is_error_response(text: str) -> bool:
 def _classify_error(text: str) -> dict:
     """
     Inspect an error string and return a dict with:
-        title       – short heading shown in st.error
-        detail      – one-line explanation
-        actions     – list of bullet-point steps the user can take
+        title       - short heading shown in st.error
+        detail      - one-line explanation
+        actions     - list of bullet-point steps the user can take
     """
     lowered = text.lower()
 
@@ -265,12 +265,20 @@ def load_sessions_from_db() -> None:
 
             title = create_chat_title(session_data)
 
+            # astronomy_data and weather_data are intentionally
+            # omitted here. When the user resumes this session and
+            # sends a follow-up message, the orchestrator will
+            # detect the missing keys (None) and fetch fresh data
+            # for that first resumed turn, then the UI will cache
+            # the results going forward.
             st.session_state.chat_sessions[session_id] = {
-                "id":           session_id,
-                "title":        title,
-                "session_data": session_data,
-                "messages":     messages,
-                "saved_at":     metadata.get("saved_at", "")
+                "id":             session_id,
+                "title":          title,
+                "session_data":   session_data,
+                "messages":       messages,
+                "saved_at":       metadata.get("saved_at", ""),
+                "astronomy_data": None,
+                "weather_data":   None,
             }
 
     except Exception as exc:
@@ -375,20 +383,40 @@ def create_new_chat(session_data) -> bool:
         )
         return False
 
+    # Fetch astronomy + weather data once and cache them on the
+    # session so every follow-up turn can reuse the same payload
+    # without making redundant API calls.
+    try:
+        astronomy_data, weather_data = fetch_session_api_data(
+            session_data
+        )
+    except Exception as exc:
+        astronomy_data = {
+            "error": str(exc),
+            "visible_planets": [],
+            "moon": {},
+            "recommended_targets": []
+        }
+        weather_data = {"error": str(exc)}
+
     # Register the chat with an empty message list first so the
     # session exists when process_user_request calls get_chat_history
     st.session_state.chat_sessions[chat_id] = {
-        "id":           chat_id,
-        "title":        title,
-        "session_data": session_data,
-        "messages":     [],
-        "saved_at":     saved_at
+        "id":             chat_id,
+        "title":          title,
+        "session_data":   session_data,
+        "messages":       [],
+        "saved_at":       saved_at,
+        # Cached API responses — reused for every subsequent message
+        "astronomy_data": astronomy_data,
+        "weather_data":   weather_data,
     }
 
     st.session_state.current_chat_id = chat_id
     st.session_state.show_new_session_form = False
 
-    # Generate the initial AI briefing via the real orchestrator
+    # Generate the initial AI briefing via the real orchestrator,
+    # passing the already-fetched data so no second API call is made.
     opening_prompt = (
         "Please give me a full observing briefing for tonight's session. "
         "Cover what's visible, the weather outlook, and your top recommended targets "
@@ -398,7 +426,9 @@ def create_new_chat(session_data) -> bool:
     initial_response = process_user_request(
         session_id=chat_id,
         session_data=session_data,
-        user_message=opening_prompt
+        user_message=opening_prompt,
+        astronomy_data=astronomy_data,
+        weather_data=weather_data,
     )
 
     # The orchestrator already persisted both messages in ChromaDB.
@@ -812,14 +842,17 @@ else:
         with st.chat_message("user"):
             st.markdown(user_prompt)
 
-        # Generate AI response via orchestrator
+        # Generate AI response via orchestrator, passing cached
+        # astronomy + weather data so no new API calls are made.
         with st.chat_message("assistant"):
             with st.spinner("Consulting the stars..."):
 
                 response = process_user_request(
                     session_id=current_chat["id"],
                     session_data=session_data,
-                    user_message=user_prompt
+                    user_message=user_prompt,
+                    astronomy_data=current_chat.get("astronomy_data"),
+                    weather_data=current_chat.get("weather_data"),
                 )
 
             if _is_error_response(response):
