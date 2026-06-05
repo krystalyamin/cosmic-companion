@@ -656,37 +656,15 @@ if (
             st.error("Please select at least one piece of equipment.")
 
         if "Telescope" in equipment:
-
-            st.markdown("### Telescope Details")
-
-            telescope_type = st.selectbox(
-                "Telescope Type",
-                ["Refractor", "Reflector", "Dobsonian", "Catadioptric"]
-            )
-
-            aperture = st.number_input(
-                "Aperture (mm)",
-                min_value=50,
-                max_value=500,
-                value=80
-            )
-
-            magnification = st.number_input(
-                "Magnification",
-                min_value=10,
-                max_value=500,
-                value=40
-            )
-
+            telescope_type = "Refractor"
+            aperture = 80
+            magnification = 40
         else:
             telescope_type = None
             aperture      = None
             magnification = None
 
-        experience = st.selectbox(
-            "Experience Level",
-            ["Beginner", "Intermediate", "Advanced"]
-        )
+        experience = "Beginner"
 
         goal = st.multiselect(
             "🎯 Observation Goal",
