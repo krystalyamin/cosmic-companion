@@ -140,6 +140,6 @@ The application remembered the location, date, time, and equipment from the orig
 
 ## Future Improvements
 
-- **Intgrate Stellarium API:** Give the chatbot the ability to configure a Stellarium star map according to the details of the user's stargazing session and provide the user with a link to open the visualization straight in their browser for reference.
+- **Integrate Stellarium API:** Give the chatbot the ability to configure a Stellarium star map according to the details of the user's stargazing session and provide the user with a link to open the visualization straight in their browser for reference.
 
 - **Integrate web search capabilities:** Enable web search capabilities when the model needs more information on specific topics like astrophotography. 
