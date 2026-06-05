@@ -671,9 +671,9 @@ if (
             [
                 "Visible Planets",
                 "Moon Viewing",
-                "Deep Sky Objects",
-                "Meteor Shower",
-                "Astrophotography",
+                # "Deep Sky Objects",
+                # "Meteor Shower",
+                # "Astrophotography",
                 "General Stargazing"
             ],
             default=["General Stargazing"]
